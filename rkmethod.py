@@ -4,6 +4,7 @@ from typing import Any, Union
 from dataclasses import dataclass
 from scipy.optimize import fsolve
 import matplotlib.pyplot as plt
+from nodepy import runge_kutta_method as nrk
 
 
 @dataclass
@@ -25,7 +26,7 @@ class Result:
 
 
 class RKMethod:
-    def __init__(self, A: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
+    def __init__(self, A: np.ndarray, b: np.ndarray, c: np.ndarray, name: str = 'RK method') -> None:
         """ Initilizes the RK method.
 
         Checks for matching array sizes, can assert if fails.
@@ -38,6 +39,7 @@ class RKMethod:
         self.stages = np.shape(self.A)[0]
         self.b = b
         self.c = c
+        self.name = name
 
         # Check array sizes
         assert np.shape(self.A) == (self.stages, self.stages)
@@ -64,6 +66,7 @@ class RKMethod:
         :param h: The step size.
         :param y: The result of the previous iteration.
         :param k: The stage values, the default value is `None`.
+        :return: The calculated stages in a flattened array.
         """
         if k is None:
             k = np.zeros((dim, self.stages))
@@ -80,11 +83,12 @@ class RKMethod:
         
         Uses the RK method to solve the IVP (`f`, `y_0`, `t_0`) on the uniform grid defined by `t_0`, `t_f` and `N`.
 
-        :param f: The function defining the ODE.
-        :param y_0: The initial value at `t_0`.
+        :param f: The function defining the ODE. f must have args in (t, u) order.
+        :param y_0: The initial value at `t_0`. Must be an `np.array`.
         :param t_0: The beginning of the time intervall.
         :param t_f: The end of the time intervall.
         :param N: The number of iterations.
+        :return: The numberical solution.
         """
 
         # ODE dim
@@ -98,7 +102,7 @@ class RKMethod:
         f_ = lambda t, y : np.asarray(f(t, y))
         # result array
         y = np.zeros((N + 1, ode_dim))
-        y[0] = y_0
+        y[0] = np.asarray(y_0)
 
         for n in range(0, N):
             # calc y[n + 1]
@@ -113,11 +117,12 @@ class RKMethod:
         
         Uses the RK method to solve the IVP (`f`, `y_0`, `t_0`) on the uniform grid defined by `t_0`, `t_f` and `N`.
 
-        :param f: The function defining the ODE.
-        :param y_0: The initial value at `t_0`.
+        :param f: The function defining the ODE. f must have args in (t, u) order.
+        :param y_0: The initial value at `t_0`. Must be an `np.array`.
         :param t_0: The beginning of the time intervall.
         :param t_f: The end of the time intervall.
         :param N: The number of iterations.
+        :return: The numberical solution.
         """
 
         # ODE dim
@@ -131,13 +136,14 @@ class RKMethod:
         f_ = lambda t, y : np.asarray(f(t, y))
         # result array
         y = np.zeros((N + 1, ode_dim))
-        y[0] = y_0
+        y[0] = np.asarray(y_0)
 
         for n in range(0, N):
             # calc y[n + 1]
             # function for non linear solver
             f_helper = lambda k : self.calculate_stages(f_, ode_dim, t[n], h, y[n], k) - k
             k = fsolve(f_helper, np.zeros((ode_dim, self.stages)))
+            k = np.reshape(k, (ode_dim, self.stages))
             y[n+1] = y[n] + np.dot(k, self.b) * h
         
         return Result(h, t, y)
@@ -148,11 +154,12 @@ class RKMethod:
         
         Uses the RK method to solve the IVP (`f`, `y_0`, `t_0`) on the uniform grid defined by `t_0`, `t_f` and `N`.
 
-        :param f: The function defining the ODE.
-        :param y_0: The initial value at `t_0`.
+        :param f: The function defining the ODE. f must have args in (t, u) order.
+        :param y_0: The initial value at `t_0`. Must be an `np.array`.
         :param t_0: The beginning of the time intervall.
         :param t_f: The end of the time intervall.
         :param N: The number of iterations.
+        :return: The numerical solution.
         """
 
         if self.is_explicit():
@@ -160,10 +167,89 @@ class RKMethod:
         else:
             return self.implicit_solver(f, y_0, t_0, t_f, N)
 
-    # TODO: A-stability region + function (+ is A-stable), possible maximal order, order
+    def meta_data(self) -> None:
+        """ Prints information about the RK method.
+        
+        Show the order of consistency, maximal order, A-stability. Uses the `nodepy` package to calculate the order.
+        """
 
+        method_type = 'explicit' if self.is_explicit() else 'implicit'
+
+        output =  f'RK method ({self.name}) meta data:\n'
+        output += f'A:\n{self.A}\n'
+        output += f'b: {self.b}\n'
+        output += f'c: {self.c}\n\n'
+        output += f'The method is {method_type}.\n\n'
+        output += f'Number of stages: {self.stages}\n\n'
+        output += f'Maximum possible order of consistency: {self.maximum_possible_order_of_consistency()}\n\n'
+        output += f'Order of consistency: {self.order()}\n'
+
+        print(output)
+        self.print_stability_function()
+        self.plot_stability_region()
+
+    def get_nodepy_rkm(self) -> Any:
+        return nrk.ExplicitRungeKuttaMethod(self.A, self.b, name = self.name) if self.is_explicit() else nrk.RungeKuttaMethod(self.A, self.b, name = self.name)
+
+    def plot_stability_region(self) -> None:
+        """ Plots stability region of the RK method.
+        
+        Uses the `nodepy` package to draw the stability region.
+        """
+        self.get_nodepy_rkm().plot_stability_region()
+
+    def print_stability_function(self) -> None:
+        """ Prints the stability function as a quotient of two polinomials.
+        
+        Uses the `nodepy` package to calculate the function.
+        """
+        
+        p, q = self.get_nodepy_rkm().stability_function()
+
+        print('Stability function in the form P/Q:\n')
+        print('P:\n')
+        print(p)
+        print('Q:\n')
+        print(q)
+    
+    def order(self) -> int:
+        """ Returns with the order of consistency.
+
+        It uses `nodepy` package order method.
+
+        :return: Order of consistency.
+        """
+        return self.get_nodepy_rkm().order()
+
+
+    def maximum_possible_order_of_consistency(self) -> int:
+        """ Returns the maximam possible order of consistency of the method.
+        
+        In case of explicit methods if the number of stages is less than `12` it is exact otherwise it gives an upper bound.
+
+        :return: The maximums order.
+        """
+        assert self.stages >= 1
+
+        if self.is_explicit():
+            min_num_of_stages = np.array([1, 2, 3, 4, 6, 7, 9, 11])
+            if self.stages <= 11:
+                return np.searchsorted(min_num_of_stages, self.stages, side='right')
+            return self.stages - 2
+        
+        return self.stages * 2
+        
+    # TODO: A-stability region + function (+ is A-stable), possible maximal order, order, order guessing form test
 
 def get_exact_result(f: Any, dim: int, t_0: float, t_f: float, N: int) -> Result:
+    """ Evaluates the `f` function in the grid points.
+    
+    :param f: The function.
+    :param dim: The dimension of the function param.
+    :param t_0: The beginning of the time intervall.
+    :param t_f: The end of the time intervall.
+    :param N: The number of iterations.
+    """
     h = (t_f - t_0) / N
     # uniform grid
     t = np.linspace(t_0, t_f, N + 1)
@@ -176,3 +262,11 @@ def get_exact_result(f: Any, dim: int, t_0: float, t_f: float, N: int) -> Result
         y[n] = f_(t[n])
     
     return Result(h, t, y)
+
+
+# Named RK methods
+class RKMethods():
+    EE          = RKMethod(np.array([[0]]), np.array([1]), np.array([0]), name='Explicit Euler')
+    IE          = RKMethod(np.array([[1]]), np.array([1]), np.array([1]), name='Implicit Euler')
+    TRAPEZOIDAL = RKMethod(np.array([[0, 0], [1/2, 1/2]]), np.array([1/2, 1/2]), np.array([0, 1]), name='Trapezoidal')
+    RK2         = RKMethod(np.array([[0, 0], [0.5, 0]]), np.array([0, 1]), np.array([0, 0.5]), name='RK2')
