@@ -8,7 +8,7 @@ from nodepy import runge_kutta_method as nrk
 
 
 @dataclass
-class Result:
+class RKResult:
     step_size: float
     grid: np.ndarray
     y: np.ndarray
@@ -18,9 +18,16 @@ class Result:
         return len(self.grid)
 
     def get_sample(self, sample_size: int) -> Any:
+        """ Returns with a sampled smaller grid.
+
+        It is necessary that `sample_size - 1` divides `size - 1`.
+
+        :param sample_size: The new grid size.
+        :return: The new grid solution.
+        """
         assert (len(self.grid) - 1) % (sample_size - 1) == 0
         step = (len(self.grid) - 1) // (sample_size - 1)
-        return Result(self.step_size * step,
+        return RKResult(self.step_size * step,
                           self.grid[0:len(self.grid):step],
                           self.y[0:len(self.y):step])
 
@@ -82,7 +89,7 @@ class RKMethod:
         return k.flatten()
 
 
-    def explicit_solver(self, f: Any, y_0: np.ndarray, t_0: float, t_f: float, N: int) -> Result:
+    def explicit_solver(self, f: Any, y_0: np.ndarray, t_0: float, t_f: float, N: int) -> RKResult:
         """ Solves the IVP on a uniform grid. Assumes that the RK method is explicit in a way that `is_explicit()` method is true.
         
         Uses the RK method to solve the IVP (`f`, `y_0`, `t_0`) on the uniform grid defined by `t_0`, `t_f` and `N`.
@@ -113,10 +120,10 @@ class RKMethod:
             k = np.reshape(self.calculate_stages(f_, ode_dim, t[n], h, y[n]), (ode_dim, self.stages))
             y[n+1] = y[n] + np.dot(k, self.b) * h
         
-        return Result(h, t, y)
+        return RKResult(h, t, y)
     
 
-    def implicit_solver(self, f: Any, y_0: np.ndarray, t_0: float, t_f: float, N: int) -> Result:
+    def implicit_solver(self, f: Any, y_0: np.ndarray, t_0: float, t_f: float, N: int) -> RKResult:
         """ Solves the IVP on a uniform grid. Assumes that the RK method is implicit.
         
         Uses the RK method to solve the IVP (`f`, `y_0`, `t_0`) on the uniform grid defined by `t_0`, `t_f` and `N`.
@@ -150,10 +157,10 @@ class RKMethod:
             k = np.reshape(k, (ode_dim, self.stages))
             y[n+1] = y[n] + np.dot(k, self.b) * h
         
-        return Result(h, t, y)
+        return RKResult(h, t, y)
 
 
-    def solver(self, f: Any, y_0: np.ndarray, t_0: float, t_f: float, N: int) -> Result:
+    def solver(self, f: Any, y_0: np.ndarray, t_0: float, t_f: float, N: int) -> RKResult:
         """ Solves the IVP on a uniform grid.
         
         Uses the RK method to solve the IVP (`f`, `y_0`, `t_0`) on the uniform grid defined by `t_0`, `t_f` and `N`.
@@ -407,7 +414,7 @@ class RKMethod:
         return order
 
 
-def get_exact_result(f: Any, dim: int, t_0: float, t_f: float, N: int) -> Result:
+def get_exact_result(f: Any, dim: int, t_0: float, t_f: float, N: int) -> RKResult:
     """ Evaluates the `f` function in the grid points.
     
     f must return an np.ndarray even if the problem is 1 dimensional.
@@ -429,7 +436,7 @@ def get_exact_result(f: Any, dim: int, t_0: float, t_f: float, N: int) -> Result
     for n in range(N + 1):
         y[n] = f_(t[n])
     
-    return Result(h, t, y)
+    return RKResult(h, t, y)
 
 
 # Named RK methods
